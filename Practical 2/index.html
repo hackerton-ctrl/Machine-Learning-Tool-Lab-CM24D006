@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pro MNIST Recognizer</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@3.18.0/dist/tf.min.js"></script>
+    <style>
+        :root {
+            --bg: #121212;
+            --card: #1e1e1e;
+            --accent: #00ff88;
+            --text: #e0e0e0;
+        }
+        body { font-family: 'Segoe UI', system-ui, sans-serif; background: var(--bg); color: var(--text); display: flex; flex-direction: column; align-items: center; min-height: 100vh; margin: 0; padding: 20px; }
+        
+        .main-container { display: flex; flex-wrap: wrap; gap: 30px; justify-content: center; margin-top: 20px; max-width: 900px; }
+        
+        .canvas-container { position: relative; }
+        canvas#canvas { border: 2px solid #333; background: black; border-radius: 16px; cursor: crosshair; touch-action: none; box-shadow: 0 10px 30px rgba(0,0,0,0.5); transition: border-color 0.3s; }
+        canvas#canvas:active { border-color: var(--accent); }
+        
+        .panel { background: var(--card); padding: 25px; border-radius: 20px; width: 280px; box-shadow: 0 8px 20px rgba(0,0,0,0.3); border: 1px solid #333; }
+        
+        #prediction { font-size: 5rem; font-weight: 800; color: var(--accent); margin: 10px 0; text-shadow: 0 0 20px rgba(0, 255, 136, 0.3); }
+        
+        /* Rankings Style */
+        .rank-item { display: flex; align-items: center; margin: 8px 0; font-size: 0.9rem; }
+        .rank-bar-bg { flex-grow: 1; height: 8px; background: #333; margin: 0 10px; border-radius: 4px; overflow: hidden; }
+        .rank-bar-fill { height: 100%; background: var(--accent); transition: width 0.3s ease-out; }
+        
+        .preview-box { background: #000; border-radius: 8px; padding: 10px; display: inline-block; margin-top: 15px; border: 1px solid #333; }
+        #input-preview { width: 56px; height: 56px; image-rendering: pixelated; display: block; }
+        
+        .controls { width: 100%; margin-top: 20px; display: flex; gap: 10px; }
+        button { flex: 1; padding: 12px; border: none; border-radius: 8px; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        .btn-clear { background: #333; color: white; }
+        .btn-clear:hover { background: #444; }
+        
+        #loading { position: fixed; inset: 0; background: var(--bg); display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 1000; }
+        .spinner { border: 3px solid rgba(0,255,136,0.1); border-top: 3px solid var(--accent); border-radius: 50%; width: 50px; height: 50px; animation: spin 0.8s linear infinite; margin-bottom: 20px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    </style>
+</head>
+<body>
+
+    <div id="loading">
+        <div class="spinner"></div>
+        <p>Neural Network Initializing...</p>
+    </div>
+
+    <h1 style="margin-bottom: 5px;">Pro Digit Recognizer</h1>
+    <p style="color:#888; margin-bottom: 20px;">Powered by TensorFlow.js Convolutional Neural Network</p>
+
+    <div class="main-container">
+        <div class="canvas-container">
+            <canvas id="canvas" width="300" height="300"></canvas>
+            <div class="controls">
+                <button class="btn-clear" onclick="clearCanvas()">Clear Canvas</button>
+            </div>
+        </div>
+
+        <div class="panel">
+            <div style="text-align: center;">
+                <span style="text-transform: uppercase; letter-spacing: 1px; font-size: 0.75rem; color: #888;">Top Prediction</span>
+                <div id="prediction">-</div>
+            </div>
+
+            <div id="rankings">
+                </div>
+            
+            <div style="text-align: center;">
+                <div class="preview-box">
+                    <canvas id="input-preview" width="28" height="28"></canvas>
+                </div>
+                <div style="font-size: 0.7rem; color: #666; margin-top: 5px;">CNN INPUT (28x28)</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+        const previewCanvas = document.getElementById('input-preview');
+        
+        let model;
+        let isDrawing = false;
+
+        async function init() {
+            try {
+                // Load a pre-trained MNIST CNN
+                model = await tf.loadLayersModel('https://storage.googleapis.com/tfjs-models/tfjs/mnist_transfer_cnn_v1/model.json');
+                // Warm up
+                tf.tidy(() => model.predict(tf.zeros([1, 28, 28, 1])));
+                document.getElementById('loading').style.display = 'none';
+            } catch (e) {
+                console.error(e);
+                alert("Model failed to load. Please refresh.");
+            }
+        }
+
+        // --- Core Image Processing ---
+        function getBoundingBox(imgData) {
+            const { data, width, height } = imgData;
+            let minX = width, minY = height, maxX = 0, maxY = 0, found = false;
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    if (data[(y * width + x) * 4 + 3] > 20) {
+                        minX = Math.min(minX, x); maxX = Math.max(maxX, x);
+                        minY = Math.min(minY, y); maxY = Math.max(maxY, y);
+                        found = true;
+                    }
+                }
+            }
+            return found ? { x: minX, y: minY, w: maxX - minX, h: maxY - minY } : null;
+        }
+
+        async function predict() {
+            if (!model) return;
+
+            const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+            const box = getBoundingBox(imgData);
+            if (!box || box.w < 5 || box.h < 5) return;
+
+            tf.tidy(() => {
+                let tensor = tf.browser.fromPixels(canvas, 1);
+                
+                // 1. Crop & Square
+                const cropped = tf.slice(tensor, [box.y, box.x, 0], [box.h, box.w, 1]);
+                const maxDim = Math.max(box.w, box.h);
+                const padH = Math.floor((maxDim - box.h) / 2);
+                const padW = Math.floor((maxDim - box.w) / 2);
+                const padded = tf.pad(cropped, [[padH, maxDim-box.h-padH], [padW, maxDim-box.w-padW], [0,0]]);
+
+                // 2. Resize to MNIST standards (20x20 inside 28x28)
+                const resized = tf.image.resizeBilinear(padded, [20, 20]);
+                const final = tf.pad(resized, [[4, 4], [4, 4], [0, 0]]);
+
+                // Update Preview UI
+                tf.browser.toPixels(final.div(255), previewCanvas);
+
+                // 3. Inference
+                const input = final.toFloat().div(255.0).expandDims(0);
+                const probs = model.predict(input).dataSync();
+                
+                updateUI(probs);
+            });
+        }
+
+        function updateUI(probs) {
+            const indexed = Array.from(probs).map((p, i) => ({ label: i, val: p }));
+            const sorted = indexed.sort((a, b) => b.val - a.val);
+            
+            document.getElementById('prediction').innerText = sorted[0].label;
+            
+            let html = '';
+            for (let i = 0; i < 3; i++) {
+                const p = sorted[i];
+                const percent = Math.round(p.val * 100);
+                html += `
+                    <div class="rank-item">
+                        <span style="width:15px; font-weight:bold">${p.label}</span>
+                        <div class="rank-bar-bg"><div class="rank-bar-fill" style="width:${percent}%"></div></div>
+                        <span style="width:35px; text-align:right">${percent}%</span>
+                    </div>`;
+            }
+            document.getElementById('rankings').innerHTML = html;
+        }
+
+        // --- Drawing Helpers ---
+        function getPos(e) {
+            const rect = canvas.getBoundingClientRect();
+            const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+            const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+            return { x: clientX - rect.left, y: clientY - rect.top };
+        }
+
+        function draw(e) {
+            if (!isDrawing) return;
+            e.preventDefault();
+            const pos = getPos(e);
+            ctx.lineTo(pos.x, pos.y);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.moveTo(pos.x, pos.y);
+            // Predict while drawing for a "live" feel
+            if (Date.now() % 3 === 0) predict(); 
+        }
+
+        function startDrawing(e) {
+            isDrawing = true;
+            const pos = getPos(e);
+            ctx.lineWidth = 18;
+            ctx.lineCap = 'round';
+            ctx.strokeStyle = 'white';
+            ctx.beginPath();
+            ctx.moveTo(pos.x, pos.y);
+        }
+
+        function stopDrawing() {
+            isDrawing = false;
+            predict();
+        }
+
+        function clearCanvas() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            document.getElementById('prediction').innerText = "-";
+            document.getElementById('rankings').innerHTML = "";
+            const pCtx = previewCanvas.getContext('2d');
+            pCtx.clearRect(0, 0, 28, 28);
+        }
+
+        canvas.addEventListener('mousedown', startDrawing);
+        canvas.addEventListener('mousemove', draw);
+        window.addEventListener('mouseup', stopDrawing);
+        canvas.addEventListener('touchstart', startDrawing);
+        canvas.addEventListener('touchmove', draw);
+        window.addEventListener('touchend', stopDrawing);
+
+        init();
+    </script>
+</body>
+</html>

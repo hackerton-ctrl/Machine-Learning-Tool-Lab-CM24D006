@@ -1,0 +1,32 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Vector Operations</title>
+  <!-- Math.js CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.8.0/math.min.js"></script>
+</head>
+<body>
+
+<h2>Vector Operations</h2>
+
+<script>
+  // Define two vectors
+  let vector1 = [1, 2, 3];
+  let vector2 = [4, 5, 6];
+
+  // Element-wise addition
+  let addition = math.add(vector1, vector2);
+
+  // Element-wise multiplication
+  let multiplication = math.dotMultiply(vector1, vector2);
+
+  // Display results
+  document.write("Vector 1: " + vector1 + "<br>");
+  document.write("Vector 2: " + vector2 + "<br><br>");
+
+  document.write("Element-wise Addition: " + addition + "<br>");
+  document.write("Element-wise Multiplication: " + multiplication);
+</script>
+
+</body>
+</html>

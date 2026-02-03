@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Regression Model - Predicted vs Actual</title>
+
+    <!-- TensorFlow.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+<h2>Regression Model (Predicted vs Actual)</h2>
+<canvas id="myChart" width="600" height="400"></canvas>
+
+<script>
+    async function trainAndPlot() {
+
+        // 1️⃣ Generate synthetic data (y = 2x + noise)
+        const xValues = [];
+        const yValues = [];
+
+        for (let i = 0; i < 50; i++) {
+            let x = i;
+            let y = 2 * x + Math.random() * 10; // noise
+            xValues.push(x);
+            yValues.push(y);
+        }
+
+        // Convert to tensors
+        const xs = tf.tensor2d(xValues, [xValues.length, 1]);
+        const ys = tf.tensor2d(yValues, [yValues.length, 1]);
+
+        // 2️⃣ Build regression model
+        const model = tf.sequential();
+        model.add(tf.layers.dense({ units: 1, inputShape: [1] }));
+
+        model.compile({
+            optimizer: tf.train.sgd(0.01),
+            loss: 'meanSquaredError'
+        });
+
+        // 3️⃣ Train the model
+        await model.fit(xs, ys, {
+            epochs: 100,
+            verbose: 0
+        });
+
+        // 4️⃣ Make predictions
+        const predictions = model.predict(xs);
+        const predictedValues = predictions.dataSync();
+
+        // 5️⃣ Plot Actual vs Predicted
+        const ctx = document.getElementById('myChart').getContext('2d');
+
+        new Chart(ctx, {
+            type: 'scatter',
+            data: {
+                datasets: [
+                    {
+                        label: 'Actual Values',
+                        data: xValues.map((x, i) => ({ x: x, y: yValues[i] }))
+                    },
+                    {
+                        label: 'Predicted Values',
+                        data: xValues.map((x, i) => ({ x: x, y: predictedValues[i] }))
+                    }
+                ]
+            },
+            options: {
+                scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'X'
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Y'
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    trainAndPlot();
+</script>
+
+</body>
+</html>

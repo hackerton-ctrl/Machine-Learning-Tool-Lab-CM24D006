@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Prediction on Unseen Data</title>
+
+    <!-- TensorFlow.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+</head>
+<body>
+
+<h2>Prediction on Unseen Inputs</h2>
+<pre id="output"></pre>
+
+<script>
+async function runPrediction() {
+
+    // 1️⃣ Training data (y = 2x)
+    const xTrain = [];
+    const yTrain = [];
+
+    for (let i = 0; i < 20; i++) {
+        xTrain.push(i);
+        yTrain.push(2 * i);
+    }
+
+    const xs = tf.tensor2d(xTrain, [xTrain.length, 1]);
+    const ys = tf.tensor2d(yTrain, [yTrain.length, 1]);
+
+    // 2️⃣ Build model
+    const model = tf.sequential();
+    model.add(tf.layers.dense({ units: 1, inputShape: [1] }));
+
+    model.compile({
+        optimizer: tf.train.sgd(0.01),
+        loss: 'meanSquaredError'
+    });
+
+    // 3️⃣ Train model
+    await model.fit(xs, ys, {
+        epochs: 100,
+        verbose: 0
+    });
+
+    // 4️⃣ Unseen test inputs
+    const unseenInputs = [25, 30, 35];
+    const unseenTensor = tf.tensor2d(unseenInputs, [unseenInputs.length, 1]);
+
+    // 5️⃣ Predictions
+    const predictions = model.predict(unseenTensor);
+    const predictedValues = predictions.dataSync();
+
+    // 6️⃣ Display results
+    let resultText = "Input\tExpected\tPredicted\n";
+    resultText += "---------------------------------\n";
+
+    unseenInputs.forEach((x, i) => {
+        const expected = 2 * x;
+        const predicted = predictedValues[i].toFixed(2);
+        resultText += `${x}\t${expected}\t\t${predicted}\n`;
+    });
+
+    document.getElementById("output").textContent = resultText;
+}
+
+runPrediction();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Learning Rate vs Convergence</title>
+
+    <!-- TensorFlow.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+
+    <!-- Chart.js CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+</head>
+<body>
+
+<h2>Effect of Learning Rate on Model Convergence</h2>
+<canvas id="lossChart" width="700" height="400"></canvas>
+
+<script>
+    async function runExperiment() {
+
+        // Generate synthetic data: y = 2x + noise
+        const xVals = [];
+        const yVals = [];
+
+        for (let i = 0; i < 50; i++) {
+            xVals.push(i);
+            yVals.push(2 * i + Math.random() * 10);
+        }
+
+        const xs = tf.tensor2d(xVals, [xVals.length, 1]);
+        const ys = tf.tensor2d(yVals, [yVals.length, 1]);
+
+        // Learning rates to test
+        const learningRates = [0.001, 0.01, 0.1];
+        const lossHistory = [];
+
+        for (let lr of learningRates) {
+
+            // Create model
+            const model = tf.sequential();
+            model.add(tf.layers.dense({ units: 1, inputShape: [1] }));
+
+            model.compile({
+                optimizer: tf.train.sgd(lr),
+                loss: 'meanSquaredError'
+            });
+
+            const losses = [];
+
+            // Train model
+            await model.fit(xs, ys, {
+                epochs: 50,
+                callbacks: {
+                    onEpochEnd: (epoch, logs) => {
+                        losses.push(logs.loss);
+                    }
+                }
+            });
+
+            lossHistory.push(losses);
+        }
+
+        // Plot Loss vs Epochs
+        const ctx = document.getElementById('lossChart').getContext('2d');
+
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: Array.from({ length: 50 }, (_, i) => i + 1),
+                datasets: [
+                    {
+                        label: 'Learning Rate = 0.001',
+                        data: lossHistory[0],
+                        fill: false
+                    },
+                    {
+                        label: 'Learning Rate = 0.01',
+                        data: lossHistory[1],
+                        fill: false
+                    },
+                    {
+                        label: 'Learning Rate = 0.1',
+                        data: lossHistory[2],
+                        fill: false
+                    }
+                ]
+            },
+            options: {
+                plugins: {
+                    title: {
+                        display: true,
+                        text: 'Loss vs Epochs for Different Learning Rates'
+                    }
+                },
+                scales: {
+                    x: {
+                        title: {
+                            display: true,
+                            text: 'Epochs'
+                        }
+                    },
+                    y: {
+                        title: {
+                            display: true,
+                            text: 'Loss'
+                        }
+                    }
+                }
+            }
+        });
+    }
+
+    runExperiment();
+</script>
+
+</body>
+</html>

@@ -1,0 +1,166 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Pro CNN Trainer - Fixed</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs-vis"></script>
+    <style>
+        body { font-family: 'Segoe UI', sans-serif; background: #121212; color: white; padding: 20px; display: flex; flex-direction: column; align-items: center; }
+        .card { background: #1e1e1e; padding: 30px; border-radius: 16px; box-shadow: 0 10px 30px rgba(0,0,0,0.5); width: 100%; max-width: 800px; border: 1px solid #333; }
+        h1 { margin-top: 0; color: #00ff88; }
+        .btn-group { display: flex; gap: 15px; margin: 25px 0; }
+        button { flex: 1; padding: 15px; border: none; border-radius: 8px; font-weight: bold; cursor: pointer; transition: 0.3s; font-size: 1rem; background: #00ff88; color: #121212; }
+        button:disabled { background: #444; color: #888; cursor: not-allowed; }
+        #log-area { background: #000; color: #00ff88; font-family: monospace; padding: 20px; border-radius: 8px; height: 200px; overflow-y: auto; border: 1px solid #333; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h1>CNN Training Dashboard</h1>
+    <p>Status: <span id="status">Ready</span></p>
+
+    <div class="btn-group">
+        <button id="start-btn" onclick="run()">Start Training</button>
+    </div>
+
+    <div id="log-area">Ready to fetch MNIST data...</div>
+</div>
+
+<script>
+    const logArea = document.getElementById('log-area');
+    const log = (msg) => {
+        logArea.innerHTML += `<div>> ${msg}</div>`;
+        logArea.scrollTop = logArea.scrollHeight;
+    };
+
+    // --- 1. DATASET LOADER ---
+    const MNIST_IMAGES_SPRITE_PATH = 'https://storage.googleapis.com/learnjs-data/model-builder/mnist_images.png';
+    const MNIST_LABELS_PATH = 'https://storage.googleapis.com/learnjs-data/model-builder/mnist_labels_uint8';
+    
+    // We will use a smaller subset for speed in the browser
+    const NUM_TRAIN_ELEMENTS = 5000;
+    const NUM_TEST_ELEMENTS = 1000;
+
+    class MnistData {
+        async load() {
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            
+            const imgRequest = new Promise((resolve, reject) => {
+                img.onload = () => {
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    canvas.width = img.width;
+                    canvas.height = img.height;
+                    ctx.drawImage(img, 0, 0);
+                    
+                    const imageData = ctx.getImageData(0, 0, img.width, img.height);
+                    // Create a buffer for ONLY the grayscale values (1 per pixel)
+                    const buffer = new Float32Array((img.width * img.height) / 4);
+                    
+                    for (let i = 0; i < imageData.data.length / 4; i++) {
+                        // MNIST is grayscale. We only take the Red channel [i*4]
+                        buffer[i] = imageData.data[i * 4] / 255;
+                    }
+                    this.datasetImages = buffer;
+                    resolve();
+                };
+                img.onerror = reject;
+                img.src = MNIST_IMAGES_SPRITE_PATH;
+            });
+
+            const labelsResponse = await fetch(MNIST_LABELS_PATH);
+            this.datasetLabels = new Uint8Array(await labelsResponse.arrayBuffer());
+
+            await imgRequest;
+
+            // --- TENSOR CREATION (The Fix) ---
+            // Slice the flat arrays to the EXACT size needed before creating tensors
+            const trainPixels = this.datasetImages.slice(0, NUM_TRAIN_ELEMENTS * 784);
+            const trainLabels = this.datasetLabels.slice(0, NUM_TRAIN_ELEMENTS * 10);
+            
+            this.trainXs = tf.tensor4d(trainPixels, [NUM_TRAIN_ELEMENTS, 28, 28, 1]);
+            this.trainYs = tf.tensor2d(trainLabels, [NUM_TRAIN_ELEMENTS, 10]);
+
+            const testOffset = NUM_TRAIN_ELEMENTS * 784;
+            const labelOffset = NUM_TRAIN_ELEMENTS * 10;
+            
+            const testPixels = this.datasetImages.slice(testOffset, testOffset + (NUM_TEST_ELEMENTS * 784));
+            const testLabels = this.datasetLabels.slice(labelOffset, labelOffset + (NUM_TEST_ELEMENTS * 10));
+
+            this.testXs = tf.tensor4d(testPixels, [NUM_TEST_ELEMENTS, 28, 28, 1]);
+            this.testYs = tf.tensor2d(testLabels, [NUM_TEST_ELEMENTS, 10]);
+        }
+    }
+
+    // --- 2. MODEL DEFINITION ---
+    function createModel() {
+        const model = tf.sequential();
+        model.add(tf.layers.conv2d({inputShape: [28, 28, 1], kernelSize: 3, filters: 8, activation: 'relu'}));
+        model.add(tf.layers.maxPooling2d({poolSize: [2, 2]}));
+        model.add(tf.layers.conv2d({kernelSize: 3, filters: 16, activation: 'relu'}));
+        model.add(tf.layers.maxPooling2d({poolSize: [2, 2]}));
+        model.add(tf.layers.flatten());
+        model.add(tf.layers.dense({units: 10, activation: 'softmax'}));
+
+        model.compile({
+            optimizer: tf.train.adam(),
+            loss: 'categoricalCrossentropy',
+            metrics: ['accuracy']
+        });
+        return model;
+    }
+
+    // --- 3. EXECUTION ---
+    async function run() {
+        const btn = document.getElementById('start-btn');
+        btn.disabled = true;
+        
+        try {
+            log("Loading data...");
+            const data = new MnistData();
+            await data.load();
+            log("Data loaded successfully.");
+
+            const model = createModel();
+            tfvis.show.modelSummary({name: 'Architecture', tab: 'Model'}, model);
+
+            log("Training starting...");
+            await model.fit(data.trainXs, data.trainYs, {
+                batchSize: 128,
+                epochs: 10,
+                shuffle: true,
+                validationData: [data.testXs, data.testYs],
+                callbacks: tfvis.show.fitCallbacks(
+                    { name: 'Training Performance', tab: 'Training' },
+                    ['loss', 'val_loss', 'acc', 'val_acc'],
+                    { height: 200, callbacks: ['onEpochEnd'] }
+                )
+            });
+
+            log("Training Complete!");
+            
+            // Show Confusion Matrix
+            const [preds, labels] = tf.tidy(() => {
+                const p = model.predict(data.testXs).argMax(-1);
+                const l = data.testYs.argMax(-1);
+                return [p, l];
+            });
+            
+            const matrix = await tfvis.metrics.confusionMatrix(labels, preds);
+            tfvis.render.confusionMatrix({name: 'Confusion Matrix', tab: 'Evaluation'}, {values: matrix});
+            
+            log("Final Evaluation visible in TFVis panel.");
+
+        } catch (e) {
+            log(`Error: ${e.message}`);
+            console.error(e);
+        } finally {
+            btn.disabled = false;
+        }
+    }
+</script>
+</body>
+</html>

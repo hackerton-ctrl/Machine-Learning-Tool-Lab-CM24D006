@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>TensorFlow.js Tensors Example</title>
+
+  <!-- TensorFlow.js CDN -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+</head>
+<body>
+  <h2>Open Console to See Tensor Outputs</h2>
+
+  <script>
+    // 1️⃣ Scalar (0D tensor)
+    const scalar = tf.scalar(5);
+    console.log("Scalar:");
+    scalar.print();
+
+    // 2️⃣ Vector (1D tensor)
+    const vector = tf.tensor([1, 2, 3, 4]);
+    console.log("Vector:");
+    vector.print();
+
+    // 3️⃣ Matrix (2D tensor)
+    const matrix = tf.tensor([
+      [1, 2, 3],
+      [4, 5, 6]
+    ]);
+    console.log("Matrix:");
+    matrix.print();
+  </script>
+</body>
+</html>

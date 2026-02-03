@@ -1,0 +1,242 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Movie Box Office Prediction</title>
+
+  <!-- TensorFlow.js -->
+  <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest"></script>
+
+  <!-- Chart.js -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+  <style>
+    body {
+      font-family: Arial;
+      background: #0f172a;
+      color: white;
+      text-align: center;
+    }
+
+    h2 {
+      margin-bottom: 5px;
+    }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 15px;
+      max-width: 900px;
+      margin: auto;
+    }
+
+    .box {
+      background: #1e293b;
+      padding: 15px;
+      border-radius: 10px;
+    }
+
+    input, select, button {
+      width: 90%;
+      padding: 8px;
+      margin-top: 5px;
+    }
+
+    button {
+      background: #22c55e;
+      border: none;
+      font-size: 16px;
+      cursor: pointer;
+      border-radius: 5px;
+    }
+
+    #result {
+      font-size: 18px;
+      color: #38bdf8;
+      margin-top: 10px;
+    }
+
+    .graph-box {
+      grid-column: span 3;
+    }
+
+    canvas {
+      background: white;
+      border-radius: 10px;
+    }
+  </style>
+</head>
+
+<body>
+
+<h2>🎬 Movie Box Office Collection Predictor</h2>
+<p>Linear Regression using TensorFlow.js</p>
+
+<div class="grid">
+
+  <div class="box">
+    <h4>Budget (₹ Crores)</h4>
+    <input type="number" id="budget" value="50">
+  </div>
+
+  <div class="box">
+    <h4>Genre</h4>
+    <select id="genre">
+      <option value="3">Action</option>
+      <option value="2">Drama</option>
+      <option value="1">Comedy</option>
+    </select>
+  </div>
+
+  <div class="box">
+    <h4>Hero Popularity</h4>
+    <select id="hero">
+      <option value="3">High</option>
+      <option value="2">Medium</option>
+      <option value="1">Low</option>
+    </select>
+  </div>
+
+  <div class="box">
+    <h4>Screens</h4>
+    <input type="number" id="screens" value="2000">
+  </div>
+
+  <div class="box">
+    <button onclick="predict()">Predict Collection</button>
+  </div>
+
+  <div class="box">
+    <h4>Predicted Collection</h4>
+    <div id="result">₹ --- Crores</div>
+  </div>
+
+  <div class="box graph-box">
+    <canvas id="chart" height="300"></canvas>
+  </div>
+
+</div>
+
+<script>
+  // ================= RAW TRAINING DATA =================
+  const rawX = [
+    [20, 1, 1, 800],
+    [30, 2, 2, 1200],
+    [40, 3, 2, 1500],
+    [50, 3, 3, 2000],
+    [60, 2, 3, 2200],
+    [70, 3, 3, 2800],
+    [80, 3, 3, 3200]
+  ];
+
+  const rawY = [50, 75, 110, 150, 170, 210, 260];
+
+  // ================= NORMALIZATION =================
+  const xTrain = tf.tensor2d(
+    rawX.map(r => [
+      r[0] / 100,   // budget
+      r[1] / 3,     // genre
+      r[2] / 3,     // hero
+      r[3] / 4000   // screens
+    ])
+  );
+
+  const yTrain = tf.tensor2d(
+    rawY.map(v => v / 300),
+    [rawY.length, 1]
+  );
+
+  // ================= MODEL =================
+  const model = tf.sequential();
+  model.add(tf.layers.dense({ units: 1, inputShape: [4] }));
+
+  model.compile({
+    optimizer: tf.train.sgd(0.01),
+    loss: 'meanSquaredError'
+  });
+
+  // ================= TRAIN MODEL =================
+  async function trainModel() {
+    await model.fit(xTrain, yTrain, { epochs: 500 });
+    drawRegressionLine();
+  }
+  trainModel();
+
+  // ================= CHART =================
+  const ctx = document.getElementById("chart").getContext("2d");
+  const chart = new Chart(ctx, {
+    type: "scatter",
+    data: {
+      datasets: [
+        {
+          label: "Actual Movie Data",
+          data: rawX.map((x, i) => ({ x: x[0], y: rawY[i] })),
+          backgroundColor: "blue"
+        },
+        {
+          label: "Regression Line",
+          type: "line",
+          data: [],
+          borderColor: "red",
+          fill: false
+        }
+      ]
+    },
+    options: {
+      scales: {
+        x: {
+          title: { display: true, text: "Budget (₹ Crores)" }
+        },
+        y: {
+          title: { display: true, text: "Box Office Collection (₹ Crores)" }
+        }
+      }
+    }
+  });
+
+  // ================= REGRESSION LINE (CORRECT) =================
+  function drawRegressionLine() {
+    const budgets = [];
+    for (let b = 20; b <= 80; b += 5) {
+      budgets.push(b);
+    }
+
+    const regressionPoints = budgets.map(b => {
+      const genre = 3;    // Action
+      const hero = 3;     // High
+      const screens = 2200; // Average
+
+      const input = tf.tensor2d([[
+        b / 100,
+        genre / 3,
+        hero / 3,
+        screens / 4000
+      ]]);
+
+      const prediction =
+        model.predict(input).dataSync()[0] * 300;
+
+      return { x: b, y: prediction };
+    });
+
+    chart.data.datasets[1].data = regressionPoints;
+    chart.update();
+  }
+
+  // ================= USER PREDICTION =================
+  function predict() {
+    const b = Number(budget.value) / 100;
+    const g = Number(genre.value) / 3;
+    const h = Number(hero.value) / 3;
+    const s = Number(screens.value) / 4000;
+
+    const input = tf.tensor2d([[b, g, h, s]]);
+    const prediction =
+      model.predict(input).dataSync()[0] * 300;
+
+    document.getElementById("result").innerText =
+      "₹ " + prediction.toFixed(2) + " Crores";
+  }
+</script>
+
+</body>
+</html>
